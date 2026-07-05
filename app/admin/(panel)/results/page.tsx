@@ -13,6 +13,7 @@ export default async function ResultsPage() {
         select: {
           title: true,
           subject: true,
+          marksCorrect: true,
           _count: { select: { questions: true } },
         },
       },
@@ -64,7 +65,7 @@ export default async function ResultsPage() {
                     </td>
                     <td className="px-4 py-3 tabular-nums text-slate-900">
                       {a.status === "SUBMITTED"
-                        ? `${a.score ?? 0} / ${a.test._count.questions}`
+                        ? `${a.score ?? 0} / ${a.test._count.questions * a.test.marksCorrect}`
                         : "—"}
                     </td>
                     <td className="px-4 py-3 tabular-nums text-slate-700">

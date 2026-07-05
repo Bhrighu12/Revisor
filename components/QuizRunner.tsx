@@ -17,6 +17,8 @@ interface AttemptData {
     title: string;
     subjectLabel: string;
     durationMinutes: number;
+    marksCorrect: number;
+    marksWrong: number;
   };
   startedAt: string;
   serverNow: string;
@@ -202,7 +204,8 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
               {data.test.title}
             </p>
             <p className="text-xs text-slate-500">
-              {data.test.subjectLabel} · {data.candidateName}
+              {data.test.subjectLabel} · {data.candidateName} · +{data.test.marksCorrect}
+              {data.test.marksWrong > 0 && `/−${data.test.marksWrong}`} marks
             </p>
           </div>
           <div

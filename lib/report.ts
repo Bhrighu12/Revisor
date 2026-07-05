@@ -27,17 +27,21 @@ export async function finalizeAttempt(attemptId: string): Promise<void> {
   });
   if (!attempt || attempt.status === "SUBMITTED") return;
 
-  let score = 0;
+  let correct = 0;
+  let wrong = 0;
   const updates = attempt.answers.map((answer) => {
-    const isCorrect =
-      answer.selectedIndex !== null &&
-      answer.selectedIndex === answer.question.correctIndex;
-    if (isCorrect) score++;
+    const attempted = answer.selectedIndex !== null;
+    const isCorrect = attempted && answer.selectedIndex === answer.question.correctIndex;
+    if (isCorrect) correct++;
+    else if (attempted) wrong++;
     return prisma.answer.update({
       where: { id: answer.id },
       data: { isCorrect },
     });
   });
+
+  // Negative marking: unattempted questions score 0.
+  const score = correct * attempt.test.marksCorrect - wrong * attempt.test.marksWrong;
 
   await prisma.$transaction([
     ...updates,
@@ -75,6 +79,10 @@ export interface Report {
   incorrect: number;
   unattempted: number;
   scorePercent: number;
+  marksCorrect: number;
+  marksWrong: number;
+  marks: number;
+  maxMarks: number;
   totalTimeSeconds: number;
   avgTimePerQuestionSeconds: number;
   questions: ReportQuestion[];
@@ -131,6 +139,10 @@ export async function buildReport(attemptId: string): Promise<Report | null> {
     incorrect,
     unattempted,
     scorePercent: totalQuestions === 0 ? 0 : Math.round((correct / totalQuestions) * 1000) / 10,
+    marksCorrect: attempt.test.marksCorrect,
+    marksWrong: attempt.test.marksWrong,
+    marks: correct * attempt.test.marksCorrect - incorrect * attempt.test.marksWrong,
+    maxMarks: totalQuestions * attempt.test.marksCorrect,
     totalTimeSeconds,
     avgTimePerQuestionSeconds:
       totalQuestions === 0 ? 0 : Math.round(totalTimeSeconds / totalQuestions),

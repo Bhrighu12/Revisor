@@ -44,6 +44,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
       subject: attempt.test.subject,
       subjectLabel: SUBJECT_LABELS[attempt.test.subject],
       durationMinutes: attempt.test.durationMinutes,
+      marksCorrect: attempt.test.marksCorrect,
+      marksWrong: attempt.test.marksWrong,
     },
     startedAt: attempt.startedAt.toISOString(),
     serverNow: new Date().toISOString(),

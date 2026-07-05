@@ -75,6 +75,11 @@ export default async function ShareLinkPage({
           <p className="mt-2 text-sm text-slate-600">
             {test._count.questions} questions · {test.durationMinutes} minute timer
           </p>
+          <p className="mt-1 text-xs text-slate-500">
+            +{test.marksCorrect} per correct answer
+            {test.marksWrong > 0 && ` · −${test.marksWrong} per wrong answer`} · unattempted
+            score 0
+          </p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <h2 className="mb-1 text-lg font-semibold text-slate-900">You&apos;re invited to take this test</h2>

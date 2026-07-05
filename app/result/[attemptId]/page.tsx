@@ -104,12 +104,21 @@ export default async function ResultPage({
 
       {/* Hero score */}
       <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Score</p>
-        <p className="mt-1 text-5xl font-bold tabular-nums text-slate-900">
-          {report.correct}
-          <span className="text-2xl font-semibold text-slate-400"> / {report.totalQuestions}</span>
+        <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Marks</p>
+        <p
+          className={`mt-1 text-5xl font-bold tabular-nums ${
+            report.marks < 0 ? "text-red-700" : "text-slate-900"
+          }`}
+        >
+          {report.marks}
+          <span className="text-2xl font-semibold text-slate-400"> / {report.maxMarks}</span>
         </p>
-        <p className="mt-1 text-slate-600">{report.scorePercent}% correct</p>
+        <p className="mt-1 text-slate-600">
+          {report.correct} of {report.totalQuestions} correct ({report.scorePercent}%)
+        </p>
+        <p className="mt-1 text-xs text-slate-400">
+          +{report.marksCorrect} per correct · −{report.marksWrong} per wrong · 0 for unattempted
+        </p>
       </div>
 
       {/* KPI row */}

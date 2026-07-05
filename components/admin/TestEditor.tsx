@@ -16,6 +16,8 @@ interface TestData {
   title: string;
   subject: string;
   durationMinutes: number;
+  marksCorrect: number;
+  marksWrong: number;
   isActive: boolean;
   questions: Question[];
   _count: { attempts: number };
@@ -141,6 +143,8 @@ export default function TestEditor({ testId }: { testId: string }) {
   // Settings
   const [title, setTitle] = useState("");
   const [duration, setDuration] = useState(30);
+  const [marksCorrect, setMarksCorrect] = useState(3);
+  const [marksWrong, setMarksWrong] = useState(1);
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Manual add / edit
@@ -191,6 +195,8 @@ export default function TestEditor({ testId }: { testId: string }) {
     setTest(data.test);
     setTitle(data.test.title);
     setDuration(data.test.durationMinutes);
+    setMarksCorrect(data.test.marksCorrect);
+    setMarksWrong(data.test.marksWrong);
   }, [testId]);
 
   useEffect(() => {
@@ -209,7 +215,7 @@ export default function TestEditor({ testId }: { testId: string }) {
     const res = await fetch(`/api/admin/tests/${testId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, durationMinutes: duration, ...extra }),
+      body: JSON.stringify({ title, durationMinutes: duration, marksCorrect, marksWrong, ...extra }),
     });
     setSavingSettings(false);
     if (res.ok) {
@@ -417,8 +423,8 @@ export default function TestEditor({ testId }: { testId: string }) {
         <p className="text-sm text-slate-500">{SUBJECT_LABELS[test.subject]}</p>
         <h1 className="text-2xl font-bold text-slate-900">{test.title}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {test.questions.length} questions · {test.durationMinutes} min timer ·{" "}
-          {test._count.attempts} attempts
+          {test.questions.length} questions · {test.durationMinutes} min timer · +
+          {test.marksCorrect}/−{test.marksWrong} marking · {test._count.attempts} attempts
         </p>
       </div>
 
@@ -440,6 +446,33 @@ export default function TestEditor({ testId }: { testId: string }) {
               onChange={(e) => setDuration(Number(e.target.value))}
               className={inputCls}
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Marks per correct
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={marksCorrect}
+              onChange={(e) => setMarksCorrect(Number(e.target.value))}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Negative marks per wrong
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={marksWrong}
+              onChange={(e) => setMarksWrong(Number(e.target.value))}
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-slate-500">0 disables negative marking</p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">

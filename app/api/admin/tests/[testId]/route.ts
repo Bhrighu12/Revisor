@@ -29,7 +29,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const { testId } = await params;
   const body = await req.json().catch(() => null);
 
-  const data: { title?: string; durationMinutes?: number; isActive?: boolean } = {};
+  const data: {
+    title?: string;
+    durationMinutes?: number;
+    isActive?: boolean;
+    marksCorrect?: number;
+    marksWrong?: number;
+  } = {};
   if (typeof body?.title === "string" && body.title.trim()) {
     data.title = body.title.trim();
   }
@@ -45,6 +51,26 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   if (typeof body?.isActive === "boolean") {
     data.isActive = body.isActive;
+  }
+  if (body?.marksCorrect !== undefined) {
+    const m = Number(body.marksCorrect);
+    if (!Number.isInteger(m) || m < 1 || m > 100) {
+      return NextResponse.json(
+        { error: "Marks per correct answer must be between 1 and 100" },
+        { status: 400 }
+      );
+    }
+    data.marksCorrect = m;
+  }
+  if (body?.marksWrong !== undefined) {
+    const m = Number(body.marksWrong);
+    if (!Number.isInteger(m) || m < 0 || m > 100) {
+      return NextResponse.json(
+        { error: "Negative marks per wrong answer must be between 0 and 100" },
+        { status: 400 }
+      );
+    }
+    data.marksWrong = m;
   }
 
   try {

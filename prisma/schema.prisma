@@ -24,6 +24,8 @@ model Test {
   title           String
   subject         Subject
   durationMinutes Int          @default(30)
+  marksCorrect    Int          @default(3)
+  marksWrong      Int          @default(1)
   isActive        Boolean      @default(true)
   createdAt       DateTime     @default(now())
   questions       Question[]
