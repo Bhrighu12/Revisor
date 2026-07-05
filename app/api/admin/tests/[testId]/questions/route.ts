@@ -71,13 +71,17 @@ export async function POST(req: NextRequest, { params }: Params) {
     where: { testId },
     _max: { order: true },
   });
-  let order = (maxOrder._max.order ?? 0) + 1;
+  const startOrder = (maxOrder._max.order ?? 0) + 1;
 
-  const created = await prisma.$transaction(
-    (parsed as NonNullable<(typeof parsed)[number]>[]).map((p) =>
-      prisma.question.create({ data: { ...p, testId, order: order++ } })
-    )
-  );
+  // A single createMany instead of one create per question — per-row inserts
+  // in a transaction exceed Prisma's 5s transaction timeout on large imports.
+  const created = await prisma.question.createMany({
+    data: (parsed as NonNullable<(typeof parsed)[number]>[]).map((p, i) => ({
+      ...p,
+      testId,
+      order: startOrder + i,
+    })),
+  });
 
-  return NextResponse.json({ questions: created, count: created.length }, { status: 201 });
+  return NextResponse.json({ count: created.count }, { status: 201 });
 }
