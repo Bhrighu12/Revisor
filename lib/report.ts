@@ -21,30 +21,32 @@ export async function finalizeAttempt(attemptId: string): Promise<void> {
   const attempt = await prisma.attempt.findUnique({
     where: { id: attemptId },
     include: {
-      answers: { include: { question: true } },
-      test: { include: { questions: true } },
+      answers: { include: { question: { select: { correctIndex: true } } } },
+      test: { select: { marksCorrect: true, marksWrong: true } },
     },
   });
   if (!attempt || attempt.status === "SUBMITTED") return;
 
   let correct = 0;
   let wrong = 0;
-  const updates = attempt.answers.map((answer) => {
+  for (const answer of attempt.answers) {
     const attempted = answer.selectedIndex !== null;
-    const isCorrect = attempted && answer.selectedIndex === answer.question.correctIndex;
-    if (isCorrect) correct++;
+    if (attempted && answer.selectedIndex === answer.question.correctIndex) correct++;
     else if (attempted) wrong++;
-    return prisma.answer.update({
-      where: { id: answer.id },
-      data: { isCorrect },
-    });
-  });
+  }
 
   // Negative marking: unattempted questions score 0.
   const score = correct * attempt.test.marksCorrect - wrong * attempt.test.marksWrong;
 
   await prisma.$transaction([
-    ...updates,
+    // Grade all answers in one statement — per-row updates exceed Prisma's
+    // 5s transaction timeout on longer tests.
+    prisma.$executeRaw`
+      UPDATE "Answer" AS a
+      SET "isCorrect" = (a."selectedIndex" IS NOT NULL AND a."selectedIndex" = q."correctIndex")
+      FROM "Question" AS q
+      WHERE a."questionId" = q.id AND a."attemptId" = ${attemptId}
+    `,
     prisma.attempt.update({
       where: { id: attemptId },
       data: { status: "SUBMITTED", submittedAt: new Date(), score },
