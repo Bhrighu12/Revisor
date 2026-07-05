@@ -35,6 +35,95 @@ const SUBJECT_LABELS: Record<string, string> = {
   REASONING: "Reasoning",
 };
 
+const OPTION_LETTERS = ["A", "B", "C", "D", "E", "F"];
+
+/**
+ * Parses an uploaded JSON file into draft questions. Accepts either a bare
+ * array or { "questions": [...] }. Each item needs `text` (or `question`),
+ * an `options` string array, and the correct answer as `correctIndex`
+ * (0-based number) or `correctOption` / `answer` (a letter like "B").
+ */
+function parseJsonQuestions(raw: string): { drafts: Draft[]; error?: string } {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return { drafts: [], error: "This file is not valid JSON" };
+  }
+
+  const list = Array.isArray(data)
+    ? data
+    : data && typeof data === "object" && Array.isArray((data as { questions?: unknown }).questions)
+      ? (data as { questions: unknown[] }).questions
+      : null;
+  if (!list) {
+    return {
+      drafts: [],
+      error: 'Expected a JSON array of questions, or an object like { "questions": [...] }',
+    };
+  }
+  if (list.length === 0) {
+    return { drafts: [], error: "The file contains no questions" };
+  }
+
+  const drafts: Draft[] = [];
+  const problems: string[] = [];
+
+  list.forEach((item, i) => {
+    const label = `Question ${i + 1}`;
+    if (!item || typeof item !== "object") {
+      problems.push(`${label}: not an object`);
+      return;
+    }
+    const q = item as Record<string, unknown>;
+
+    const text =
+      typeof q.text === "string" && q.text.trim()
+        ? q.text.trim()
+        : typeof q.question === "string"
+          ? q.question.trim()
+          : "";
+    if (!text) {
+      problems.push(`${label}: missing "text"`);
+      return;
+    }
+
+    const options = Array.isArray(q.options)
+      ? q.options.filter((o): o is string => typeof o === "string").map((o) => o.trim())
+      : [];
+    if (options.length < 2 || options.some((o) => !o)) {
+      problems.push(`${label}: needs an "options" array with 2+ non-empty strings`);
+      return;
+    }
+
+    let correctIndex = -1;
+    const letter = q.correctOption ?? q.answer;
+    if (typeof q.correctIndex === "number" && Number.isInteger(q.correctIndex)) {
+      correctIndex = q.correctIndex;
+    } else if (typeof letter === "string") {
+      correctIndex = OPTION_LETTERS.indexOf(letter.trim().toUpperCase());
+    } else if (typeof letter === "number" && Number.isInteger(letter)) {
+      correctIndex = letter;
+    }
+    if (correctIndex < 0 || correctIndex >= options.length) {
+      problems.push(
+        `${label}: needs "correctIndex" (0-based) or "correctOption" (a letter like "B") matching an option`
+      );
+      return;
+    }
+
+    const explanation =
+      typeof q.explanation === "string" && q.explanation.trim() ? q.explanation.trim() : undefined;
+
+    drafts.push({ text, options, correctIndex, explanation });
+  });
+
+  if (problems.length > 0) {
+    return { drafts: [], error: problems.slice(0, 5).join(" · ") };
+  }
+  return { drafts };
+}
+
 const emptyForm = {
   text: "",
   options: ["", "", "", ""],
@@ -73,6 +162,14 @@ export default function TestEditor({ testId }: { testId: string }) {
   const [importCount, setImportCount] = useState(20);
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState("");
+
+  // JSON import
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const [jsonFile, setJsonFile] = useState<File | null>(null);
+  const [jsonError, setJsonError] = useState("");
+
+  // Shuffle
+  const [shuffling, setShuffling] = useState(false);
 
   // Draft review (shared by AI + import)
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -253,6 +350,39 @@ export default function TestEditor({ testId }: { testId: string }) {
     }
   }
 
+  async function shuffleQuestions() {
+    setShuffling(true);
+    const res = await fetch(`/api/admin/tests/${testId}/questions/shuffle`, {
+      method: "POST",
+    });
+    setShuffling(false);
+    if (res.ok) {
+      showNotice("Question order shuffled");
+      load();
+    } else {
+      const data = await res.json().catch(() => null);
+      showNotice(data?.error || "Could not shuffle the questions");
+    }
+  }
+
+  async function importJson(e: React.FormEvent) {
+    e.preventDefault();
+    if (!jsonFile) {
+      setJsonError("Choose a .json file first");
+      return;
+    }
+    setJsonError("");
+    const raw = await jsonFile.text();
+    const { drafts: parsed, error } = parseJsonQuestions(raw);
+    if (error) {
+      setJsonError(error);
+      return;
+    }
+    setDrafts(parsed);
+    setJsonOpen(false);
+    setJsonFile(null);
+  }
+
   async function saveDrafts() {
     setSavingDrafts(true);
     const res = await fetch(`/api/admin/tests/${testId}/questions`, {
@@ -358,6 +488,12 @@ export default function TestEditor({ testId }: { testId: string }) {
           className="rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
         >
           📄 Import PDF / Word
+        </button>
+        <button
+          onClick={() => setJsonOpen((v) => !v)}
+          className="rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100"
+        >
+          {"{ }"} Import JSON
         </button>
       </div>
 
@@ -548,6 +684,73 @@ export default function TestEditor({ testId }: { testId: string }) {
         </form>
       )}
 
+      {/* JSON import form */}
+      {jsonOpen && (
+        <form onSubmit={importJson} className="mb-6 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5">
+          <h3 className="mb-1 font-semibold text-slate-900">Import from a JSON file</h3>
+          <p className="mb-3 text-sm text-slate-600">
+            Upload a .json file with your questions. No AI involved — questions are added exactly
+            as written, after your review.
+          </p>
+          <details className="mb-4 text-sm text-slate-600">
+            <summary className="cursor-pointer font-medium text-indigo-700">
+              Expected format
+            </summary>
+            <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100">
+{`[
+  {
+    "text": "What is the capital of India?",
+    "options": ["Mumbai", "New Delhi", "Kolkata", "Chennai"],
+    "correctIndex": 1,
+    "explanation": "New Delhi has been the capital since 1911."
+  }
+]`}
+            </pre>
+            <p className="mt-2">
+              Also accepted: <code className="rounded bg-slate-200 px-1">{`{ "questions": [...] }`}</code> as
+              the top level, <code className="rounded bg-slate-200 px-1">question</code> instead of{" "}
+              <code className="rounded bg-slate-200 px-1">text</code>, and{" "}
+              <code className="rounded bg-slate-200 px-1">correctOption</code> /{" "}
+              <code className="rounded bg-slate-200 px-1">answer</code> as a letter (&quot;A&quot;–&quot;D&quot;)
+              instead of <code className="rounded bg-slate-200 px-1">correctIndex</code>.{" "}
+              <code className="rounded bg-slate-200 px-1">explanation</code> is optional.
+            </p>
+          </details>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">File</label>
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={(e) => setJsonFile(e.target.files?.[0] ?? null)}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 sm:max-w-md"
+            />
+          </div>
+          {jsonError && (
+            <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+              {jsonError}
+            </p>
+          )}
+          <div className="mt-4 flex gap-3">
+            <button
+              type="submit"
+              className="rounded-lg bg-indigo-600 px-5 py-2 font-semibold text-white hover:bg-indigo-700"
+            >
+              Load questions
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setJsonOpen(false);
+                setJsonError("");
+              }}
+              className="rounded-lg border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
       {/* Draft review */}
       {drafts.length > 0 && (
         <section className="mb-6 rounded-2xl border-2 border-indigo-300 bg-white p-5 shadow-sm">
@@ -615,12 +818,23 @@ export default function TestEditor({ testId }: { testId: string }) {
       )}
 
       {/* Question list */}
-      <h2 className="mb-3 text-lg font-semibold text-slate-900">
-        Questions ({test.questions.length})
-      </h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Questions ({test.questions.length})
+        </h2>
+        {test.questions.length > 1 && (
+          <button
+            onClick={shuffleQuestions}
+            disabled={shuffling}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {shuffling ? "Shuffling…" : "🔀 Shuffle order"}
+          </button>
+        )}
+      </div>
       {test.questions.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          No questions yet — add them manually, generate with AI, or import a document.
+          No questions yet — add them manually, generate with AI, or import a document or JSON file.
         </div>
       ) : (
         <div className="flex flex-col gap-3">
