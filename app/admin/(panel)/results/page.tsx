@@ -87,12 +87,21 @@ export default async function ResultsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {a.status === "SUBMITTED" && (
-                        <Link
-                          href={`/result/${a.id}`}
-                          className="font-medium text-indigo-600 hover:underline"
-                        >
-                          Report
-                        </Link>
+                        <span className="flex gap-3">
+                          <Link
+                            href={`/result/${a.id}`}
+                            className="font-medium text-indigo-600 hover:underline"
+                          >
+                            Report
+                          </Link>
+                          <a
+                            href={`/api/admin/attempts/${a.id}/pdf`}
+                            className="font-medium text-indigo-600 hover:underline"
+                            title="Download report card as PDF"
+                          >
+                            PDF
+                          </a>
+                        </span>
                       )}
                     </td>
                   </tr>
