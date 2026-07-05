@@ -111,6 +111,27 @@ export default function CodeManager() {
     }
   }
 
+  function shareLink(code: string) {
+    return `${window.location.origin}/t/${code}`;
+  }
+
+  async function copyLink(code: string) {
+    try {
+      await navigator.clipboard.writeText(shareLink(code));
+      setCopied(`${code}:link`);
+      setTimeout(() => setCopied(""), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  function shareOnWhatsApp(c: CodeRow) {
+    const text =
+      `Here's your ${c.test.title} practice test (${SUBJECT_LABELS[c.test.subject]}). ` +
+      `Open this link and enter your name to start: ${shareLink(c.code)}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  }
+
   const inputCls =
     "w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200";
 
@@ -122,8 +143,8 @@ export default function CodeManager() {
     <main>
       <h1 className="text-2xl font-bold text-slate-900">Access codes</h1>
       <p className="mt-1 mb-6 text-sm text-slate-500">
-        Generate codes and share them with candidates. A candidate enters the code and
-        their name to start the linked test.
+        Generate codes and share them with candidates. Use &quot;Copy link&quot; to get a
+        shareable URL that pre-fills the code — the candidate only enters their name.
       </p>
 
       {/* Create form */}
@@ -251,7 +272,21 @@ export default function CodeManager() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <button
+                        onClick={() => copyLink(c.code)}
+                        title={`Copy share link: /t/${c.code}`}
+                        className="font-medium text-indigo-600 hover:underline"
+                      >
+                        {copied === `${c.code}:link` ? "Link copied!" : "Copy link"}
+                      </button>
+                      <button
+                        onClick={() => shareOnWhatsApp(c)}
+                        title="Share the test link on WhatsApp"
+                        className="font-medium text-emerald-600 hover:underline"
+                      >
+                        WhatsApp
+                      </button>
                       <button
                         onClick={() => toggleActive(c)}
                         className="font-medium text-indigo-600 hover:underline"

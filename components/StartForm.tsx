@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function StartForm() {
+export default function StartForm({ initialCode }: { initialCode?: string }) {
   const router = useRouter();
-  const [code, setCode] = useState("");
+  const lockedCode = Boolean(initialCode);
+  const [code, setCode] = useState(initialCode ?? "");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -46,7 +47,10 @@ export default function StartForm() {
           placeholder="e.g. K7M2XQ"
           autoComplete="off"
           autoCapitalize="characters"
-          className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 font-mono text-lg tracking-widest uppercase placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:normal-case focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          readOnly={lockedCode}
+          className={`w-full rounded-lg border border-slate-300 px-4 py-3 font-mono text-lg tracking-widest uppercase placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:normal-case focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 ${
+            lockedCode ? "bg-slate-50 text-slate-600" : "bg-white"
+          }`}
           required
         />
       </div>
