@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { SUBJECT_LABELS, formatSeconds } from "@/lib/utils";
+import { finalizeExpiredAttempts } from "@/lib/report";
+import { SUBJECT_LABELS, formatDateTimeIST, formatSeconds } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function ResultsPage() {
+  // Auto-submit abandoned attempts whose time has run out.
+  await finalizeExpiredAttempts();
+
   const attempts = await prisma.attempt.findMany({
     orderBy: { startedAt: "desc" },
     take: 200,
@@ -83,7 +87,7 @@ export default async function ResultsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500">
-                      {a.startedAt.toLocaleString()}
+                      {formatDateTimeIST(a.startedAt)}
                     </td>
                     <td className="px-4 py-3">
                       {a.status === "SUBMITTED" && (

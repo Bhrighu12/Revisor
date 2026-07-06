@@ -54,6 +54,66 @@ export async function finalizeAttempt(attemptId: string): Promise<void> {
   ]);
 }
 
+/**
+ * Force-submits every attempt whose time limit has passed. Abandoned attempts
+ * otherwise stay IN_PROGRESS until someone opens their quiz or result page.
+ * Returns the number of attempts finalized.
+ */
+export async function finalizeExpiredAttempts(): Promise<number> {
+  const open = await prisma.attempt.findMany({
+    where: { status: "IN_PROGRESS" },
+    select: {
+      id: true,
+      startedAt: true,
+      test: { select: { durationMinutes: true } },
+    },
+  });
+  const expired = open.filter((a) => isExpired(a.startedAt, a.test.durationMinutes));
+  for (const a of expired) {
+    await finalizeAttempt(a.id);
+  }
+  return expired.length;
+}
+
+/**
+ * Re-grades every answer of a test against the current answer keys and
+ * recomputes the scores of already-submitted attempts. Called after a
+ * question's correct answer changes (or a question is deleted) so declared
+ * results update immediately.
+ */
+export async function regradeTest(testId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      UPDATE "Answer" AS a
+      SET "isCorrect" = (a."selectedIndex" IS NOT NULL AND a."selectedIndex" = q."correctIndex")
+      FROM "Question" AS q, "Attempt" AS att
+      WHERE q.id = a."questionId" AND att.id = a."attemptId" AND att."testId" = ${testId}
+    `,
+    prisma.$executeRaw`
+      UPDATE "Attempt" AS att
+      SET "score" = s.marks
+      FROM (
+        SELECT at2.id AS attempt_id,
+               COALESCE(SUM(
+                 CASE
+                   WHEN a."selectedIndex" IS NOT NULL AND a."selectedIndex" = q."correctIndex"
+                     THEN t."marksCorrect"
+                   WHEN a."selectedIndex" IS NOT NULL THEN -t."marksWrong"
+                   ELSE 0
+                 END
+               ), 0)::int AS marks
+        FROM "Attempt" at2
+        JOIN "Test" t ON t.id = at2."testId"
+        LEFT JOIN "Answer" a ON a."attemptId" = at2.id
+        LEFT JOIN "Question" q ON q.id = a."questionId"
+        WHERE at2."testId" = ${testId} AND at2.status = 'SUBMITTED'
+        GROUP BY at2.id
+      ) AS s
+      WHERE att.id = s.attempt_id
+    `,
+  ]);
+}
+
 export interface ReportQuestion {
   index: number;
   questionId: string;

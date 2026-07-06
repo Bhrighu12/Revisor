@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { buildReport, finalizeAttempt, isExpired } from "@/lib/report";
-import { formatSeconds } from "@/lib/utils";
+import { formatDateTimeIST, formatSeconds } from "@/lib/utils";
 import FeedbackPanel from "@/components/FeedbackPanel";
 
 export const dynamic = "force-dynamic";
@@ -98,7 +98,7 @@ export default async function ResultPage({
         <p className="mt-1 text-slate-600">
           {report.candidateName}
           {report.submittedAt &&
-            ` · submitted ${new Date(report.submittedAt).toLocaleString()}`}
+            ` · submitted ${formatDateTimeIST(report.submittedAt)}`}
         </p>
       </div>
 

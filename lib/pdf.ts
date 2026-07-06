@@ -1,6 +1,6 @@
 import PDFDocument from "pdfkit";
 import type { Report } from "./report";
-import { formatSeconds } from "./utils";
+import { formatDateTimeIST, formatSeconds } from "./utils";
 
 const SLATE = "#334155";
 const MUTED = "#64748b";
@@ -52,7 +52,7 @@ export function buildReportPdf(report: Report): Promise<Buffer> {
     doc.text(
       `Candidate: ${sanitize(report.candidateName)}` +
         (report.submittedAt
-          ? ` · Submitted: ${new Date(report.submittedAt).toLocaleString("en-IN")}`
+          ? ` · Submitted: ${formatDateTimeIST(report.submittedAt)}`
           : "")
     );
     doc.moveDown(0.8);

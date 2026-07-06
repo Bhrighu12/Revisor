@@ -20,6 +20,21 @@ export function generateAccessCode(length = 6): string {
   return code;
 }
 
+/** Formats a date in IST regardless of the server's timezone (Vercel runs in UTC). */
+export function formatDateTimeIST(d: Date | string): string {
+  return (
+    new Date(d).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }) + " IST"
+  );
+}
+
 export function formatSeconds(total: number): string {
   const s = Math.max(0, Math.round(total));
   const m = Math.floor(s / 60);

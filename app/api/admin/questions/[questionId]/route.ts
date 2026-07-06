@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { guardAdmin } from "@/lib/admin-guard";
+import { regradeTest } from "@/lib/report";
 
 type Params = { params: Promise<{ questionId: string }> };
 
@@ -56,6 +57,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const question = await prisma.question.update({ where: { id: questionId }, data });
+
+  // If the answer key changed, re-grade declared results right away.
+  if (
+    (data.correctIndex !== undefined && data.correctIndex !== existing.correctIndex) ||
+    (data.options !== undefined && data.options.length !== existing.options.length)
+  ) {
+    await regradeTest(existing.testId);
+  }
+
   return NextResponse.json({ question });
 }
 
@@ -65,7 +75,9 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
   const { questionId } = await params;
   try {
-    await prisma.question.delete({ where: { id: questionId } });
+    const question = await prisma.question.delete({ where: { id: questionId } });
+    // Answers to this question cascade-delete; rescore declared results.
+    await regradeTest(question.testId);
     return NextResponse.json({ ok: true });
   } catch {
     return NextResponse.json({ error: "Question not found" }, { status: 404 });
