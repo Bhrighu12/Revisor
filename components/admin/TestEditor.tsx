@@ -170,6 +170,7 @@ export default function TestEditor({ testId }: { testId: string }) {
   // JSON import
   const [jsonOpen, setJsonOpen] = useState(false);
   const [jsonFile, setJsonFile] = useState<File | null>(null);
+  const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState("");
 
   // Shuffle
@@ -373,12 +374,13 @@ export default function TestEditor({ testId }: { testId: string }) {
 
   async function importJson(e: React.FormEvent) {
     e.preventDefault();
-    if (!jsonFile) {
-      setJsonError("Choose a .json file first");
+    // Pasted text wins; fall back to the chosen file.
+    const raw = jsonText.trim() || (jsonFile ? await jsonFile.text() : "");
+    if (!raw) {
+      setJsonError("Paste JSON below or choose a .json file");
       return;
     }
     setJsonError("");
-    const raw = await jsonFile.text();
     const { drafts: parsed, error } = parseJsonQuestions(raw);
     if (error) {
       setJsonError(error);
@@ -387,6 +389,7 @@ export default function TestEditor({ testId }: { testId: string }) {
     setDrafts(parsed);
     setJsonOpen(false);
     setJsonFile(null);
+    setJsonText("");
   }
 
   async function saveDrafts() {
@@ -750,13 +753,29 @@ export default function TestEditor({ testId }: { testId: string }) {
             </p>
           </details>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">File</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Paste JSON</label>
+            <textarea
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+              rows={6}
+              placeholder='[ { "text": "...", "options": ["...", "...", "...", "..."], "correctIndex": 1 } ]'
+              spellCheck={false}
+              className={`${inputCls} font-mono text-xs`}
+            />
+          </div>
+          <div className="mt-3">
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              …or upload a file
+            </label>
             <input
               type="file"
               accept=".json,application/json"
               onChange={(e) => setJsonFile(e.target.files?.[0] ?? null)}
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 sm:max-w-md"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              If both are provided, the pasted JSON is used.
+            </p>
           </div>
           {jsonError && (
             <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">

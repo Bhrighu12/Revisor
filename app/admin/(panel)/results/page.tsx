@@ -1,15 +1,26 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { finalizeExpiredAttempts } from "@/lib/report";
-import { SUBJECT_LABELS, formatDateTimeIST, formatSeconds } from "@/lib/utils";
+import { SUBJECTS, SUBJECT_LABELS, formatDateTimeIST, formatSeconds } from "@/lib/utils";
+import type { Subject } from "@/app/generated/prisma/enums";
 
 export const dynamic = "force-dynamic";
 
-export default async function ResultsPage() {
+export default async function ResultsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ subject?: string }>;
+}) {
+  const { subject } = await searchParams;
+  const subjectFilter = SUBJECTS.includes(subject as Subject)
+    ? (subject as Subject)
+    : undefined;
+
   // Auto-submit abandoned attempts whose time has run out.
   await finalizeExpiredAttempts();
 
   const attempts = await prisma.attempt.findMany({
+    where: subjectFilter ? { test: { subject: subjectFilter } } : undefined,
     orderBy: { startedAt: "desc" },
     take: 200,
     include: {
@@ -33,9 +44,38 @@ export default async function ResultsPage() {
         Latest attempts across all tests. Open a report for full per-question detail.
       </p>
 
+      {/* Subject filter */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Link
+          href="/admin/results"
+          className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+            !subjectFilter
+              ? "bg-indigo-600 text-white"
+              : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          All subjects
+        </Link>
+        {SUBJECTS.map((s) => (
+          <Link
+            key={s}
+            href={`/admin/results?subject=${s}`}
+            className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+              subjectFilter === s
+                ? "bg-indigo-600 text-white"
+                : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            {SUBJECT_LABELS[s]}
+          </Link>
+        ))}
+      </div>
+
       {attempts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          No attempts yet.
+          {subjectFilter
+            ? `No ${SUBJECT_LABELS[subjectFilter]} attempts yet.`
+            : "No attempts yet."}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
