@@ -1,15 +1,33 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { SUBJECT_LABELS } from "@/lib/utils";
+import { SUBJECTS, SUBJECT_LABELS } from "@/lib/utils";
+import type { Subject } from "@/app/generated/prisma/enums";
 import CreateTestForm from "@/components/admin/CreateTestForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ subject?: string }>;
+}) {
+  const { subject } = await searchParams;
+  const subjectFilter = SUBJECTS.includes(subject as Subject)
+    ? (subject as Subject)
+    : undefined;
+
   const tests = await prisma.test.findMany({
+    where: subjectFilter ? { subject: subjectFilter } : undefined,
     orderBy: { createdAt: "desc" },
     include: { _count: { select: { questions: true, attempts: true } } },
   });
+
+  const chipCls = (active: boolean) =>
+    `rounded-full px-3 py-1.5 text-sm font-medium transition ${
+      active
+        ? "bg-indigo-600 text-white"
+        : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+    }`;
 
   return (
     <main>
@@ -23,9 +41,27 @@ export default async function DashboardPage() {
         <CreateTestForm />
       </div>
 
+      {/* Subject filter */}
+      <div className="mb-5 flex flex-wrap gap-2">
+        <Link href="/admin/dashboard" className={chipCls(!subjectFilter)}>
+          All subjects
+        </Link>
+        {SUBJECTS.map((s) => (
+          <Link
+            key={s}
+            href={`/admin/dashboard?subject=${s}`}
+            className={chipCls(subjectFilter === s)}
+          >
+            {SUBJECT_LABELS[s]}
+          </Link>
+        ))}
+      </div>
+
       {tests.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          No tests yet — create your first test above.
+          {subjectFilter
+            ? `No ${SUBJECT_LABELS[subjectFilter]} tests yet.`
+            : "No tests yet — create your first test above."}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">

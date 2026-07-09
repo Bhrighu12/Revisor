@@ -39,6 +39,7 @@ export default function CodeManager() {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [copied, setCopied] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("");
 
   const load = useCallback(async () => {
     const [codesRes, testsRes] = await Promise.all([
@@ -135,6 +136,10 @@ export default function CodeManager() {
   const inputCls =
     "w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200";
 
+  const visibleCodes = (codes ?? []).filter(
+    (c) => !subjectFilter || c.test.subject === subjectFilter
+  );
+
   if (error) {
     return <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700">{error}</p>;
   }
@@ -213,12 +218,33 @@ export default function CodeManager() {
         )}
       </form>
 
+      {/* Subject filter */}
+      {codes !== null && codes.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {["", ...Object.keys(SUBJECT_LABELS)].map((s) => (
+            <button
+              key={s || "all"}
+              onClick={() => setSubjectFilter(s)}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                subjectFilter === s
+                  ? "bg-indigo-600 text-white"
+                  : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {s ? SUBJECT_LABELS[s] : "All subjects"}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Codes table */}
       {codes === null ? (
         <p className="text-slate-500">Loading…</p>
-      ) : codes.length === 0 ? (
+      ) : visibleCodes.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          No codes yet.
+          {codes.length === 0
+            ? "No codes yet."
+            : `No codes for ${SUBJECT_LABELS[subjectFilter] ?? "this subject"} yet.`}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -234,7 +260,7 @@ export default function CodeManager() {
               </tr>
             </thead>
             <tbody>
-              {codes.map((c) => (
+              {visibleCodes.map((c) => (
                 <tr key={c.id} className="border-b border-slate-100 last:border-0">
                   <td className="px-4 py-3">
                     <button
