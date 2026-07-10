@@ -15,6 +15,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       ? null
       : Number(selectedIndexRaw);
   const timeTakenSeconds = Math.max(0, Math.round(Number(body?.timeTakenSeconds) || 0));
+  const doubtful = body?.doubtful === true;
 
   const attempt = await prisma.attempt.findUnique({
     where: { id: attemptId },
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (attempt.status === "SUBMITTED") {
     return NextResponse.json({ error: "Attempt already submitted" }, { status: 409 });
   }
-  if (isExpired(attempt.startedAt, attempt.test.durationMinutes)) {
+  if (isExpired(attempt, attempt.test.durationMinutes)) {
     await finalizeAttempt(attemptId);
     return NextResponse.json({ error: "Time is up" }, { status: 409 });
   }
@@ -48,8 +49,8 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   await prisma.answer.upsert({
     where: { attemptId_questionId: { attemptId, questionId } },
-    create: { attemptId, questionId, selectedIndex, timeTakenSeconds },
-    update: { selectedIndex, timeTakenSeconds },
+    create: { attemptId, questionId, selectedIndex, doubtful, timeTakenSeconds },
+    update: { selectedIndex, doubtful, timeTakenSeconds },
   });
 
   return NextResponse.json({ ok: true });

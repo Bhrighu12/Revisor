@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { finalizeAttempt, isExpired } from "@/lib/report";
+import { finalizeAttempt, isExpired, remainingSeconds } from "@/lib/report";
 import { SUBJECT_LABELS } from "@/lib/utils";
 
 type Params = { params: Promise<{ attemptId: string }> };
@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
   if (
     attempt.status === "IN_PROGRESS" &&
-    isExpired(attempt.startedAt, attempt.test.durationMinutes)
+    isExpired(attempt, attempt.test.durationMinutes)
   ) {
     await finalizeAttempt(attempt.id);
     return NextResponse.json({ status: "SUBMITTED" });
@@ -49,14 +49,19 @@ export async function GET(_req: NextRequest, { params }: Params) {
     },
     startedAt: attempt.startedAt.toISOString(),
     serverNow: new Date().toISOString(),
+    paused: attempt.pausedAt !== null,
+    remainingSeconds: Math.max(0, remainingSeconds(attempt, attempt.test.durationMinutes)),
     questions: attempt.test.questions.map((q) => ({
       id: q.id,
       text: q.text,
+      imageUrl: q.imageUrl,
       options: q.options,
+      optionImages: q.optionImages,
     })),
     savedAnswers: attempt.answers.map((a) => ({
       questionId: a.questionId,
       selectedIndex: a.selectedIndex,
+      doubtful: a.doubtful,
       timeTakenSeconds: a.timeTakenSeconds,
     })),
   });

@@ -38,7 +38,9 @@ model Question {
   testId       String
   test         Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
   text         String
+  imageUrl     String?
   options      String[]
+  optionImages String[] @default([])
   correctIndex Int
   explanation  String?
   order        Int      @default(0)
@@ -68,6 +70,8 @@ model Attempt {
   candidateName String
   status        AttemptStatus @default(IN_PROGRESS)
   startedAt     DateTime      @default(now())
+  pausedAt      DateTime?
+  pausedSeconds Int           @default(0)
   submittedAt   DateTime?
   score         Int?
   aiFeedback    String?
@@ -82,6 +86,7 @@ model Answer {
   question         Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedIndex    Int?
   isCorrect        Boolean  @default(false)
+  doubtful         Boolean  @default(false)
   timeTakenSeconds Int      @default(0)
 
   @@unique([attemptId, questionId])

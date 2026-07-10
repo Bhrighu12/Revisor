@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { guardAdmin } from "@/lib/admin-guard";
 import { regradeTest } from "@/lib/report";
+import { parseImage } from "@/lib/utils";
 
 type Params = { params: Promise<{ questionId: string }> };
 
@@ -14,7 +15,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   const data: {
     text?: string;
+    imageUrl?: string | null;
     options?: string[];
+    optionImages?: string[];
     correctIndex?: number;
     explanation?: string | null;
   } = {};
@@ -42,6 +45,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
         ? body.explanation.trim()
         : null;
   }
+  if (body?.imageUrl !== undefined) {
+    data.imageUrl = parseImage(body.imageUrl);
+  }
 
   const existing = await prisma.question.findUnique({ where: { id: questionId } });
   if (!existing) {
@@ -54,6 +60,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       { error: "correctIndex is out of range for the options" },
       { status: 400 }
     );
+  }
+  if (body?.optionImages !== undefined) {
+    const raw = Array.isArray(body.optionImages) ? body.optionImages : [];
+    const cleaned = options.map((_, i) => parseImage(raw[i]) ?? "");
+    data.optionImages = cleaned.some((s) => s) ? cleaned : [];
   }
 
   const question = await prisma.question.update({ where: { id: questionId }, data });

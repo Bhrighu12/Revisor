@@ -20,6 +20,19 @@ export function generateAccessCode(length = 6): string {
   return code;
 }
 
+// Question/option images are stored as data URIs (from the editor's upload)
+// or plain URLs (from JSON imports).
+const MAX_IMAGE_CHARS = 1_500_000; // ~1 MB of base64
+
+/** Validates an incoming image value; returns the cleaned string or null. */
+export function parseImage(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (/^data:image\/[a-z+.-]+;base64,/i.test(s) && s.length <= MAX_IMAGE_CHARS) return s;
+  if (/^https?:\/\//i.test(s) && s.length <= 2000) return s;
+  return null;
+}
+
 /** Formats a date in IST regardless of the server's timezone (Vercel runs in UTC). */
 export function formatDateTimeIST(d: Date | string): string {
   return (

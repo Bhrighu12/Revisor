@@ -47,7 +47,7 @@ export default async function ResultPage({
       include: { test: { select: { durationMinutes: true } } },
     });
     if (attempt?.status === "IN_PROGRESS") {
-      if (isExpired(attempt.startedAt, attempt.test.durationMinutes)) {
+      if (isExpired(attempt, attempt.test.durationMinutes)) {
         await finalizeAttempt(attemptId);
         report = await buildReport(attemptId);
       } else {
@@ -159,8 +159,24 @@ export default async function ResultPage({
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">
                   ⏱ {formatSeconds(q.timeTakenSeconds)}
                 </span>
+                {q.doubtful && (
+                  <span
+                    className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800"
+                    title="The candidate flagged this question as possibly wrong"
+                  >
+                    ⚑ Flagged doubtful
+                  </span>
+                )}
               </div>
               <p className="whitespace-pre-wrap font-medium text-slate-900">{q.text}</p>
+              {q.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={q.imageUrl}
+                  alt="Question illustration"
+                  className="mt-3 max-h-80 max-w-full rounded-lg border border-slate-200 object-contain"
+                />
+              )}
               <div className="mt-3 flex flex-col gap-2">
                 {q.options.map((opt, i) => {
                   const isCorrect = i === q.correctIndex;
@@ -175,7 +191,17 @@ export default async function ResultPage({
                       <span className="mt-0.5 font-bold text-slate-500">
                         {String.fromCharCode(65 + i)}
                       </span>
-                      <span className="flex-1 text-slate-800">{opt}</span>
+                      <span className="flex-1 text-slate-800">
+                        {opt}
+                        {q.optionImages?.[i] && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={q.optionImages[i]}
+                            alt={`Option ${String.fromCharCode(65 + i)}`}
+                            className="mt-2 max-h-40 max-w-full rounded-md border border-slate-200 object-contain"
+                          />
+                        )}
+                      </span>
                       {isCorrect && (
                         <span className="shrink-0 text-xs font-semibold text-emerald-700">
                           ✓ Correct answer

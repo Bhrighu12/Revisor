@@ -5,12 +5,28 @@ import { SUBJECT_LABELS } from "./utils";
 // to absorb network latency on the final client-side auto-submit.
 const GRACE_SECONDS = 20;
 
-export function deadlineOf(startedAt: Date, durationMinutes: number): Date {
-  return new Date(startedAt.getTime() + durationMinutes * 60_000);
+// A single pause freezes the clock for at most this long; past it the clock
+// resumes so abandoned-while-paused attempts still expire and auto-submit.
+export const MAX_PAUSE_MS = 2 * 60 * 60_000;
+
+export interface AttemptTiming {
+  startedAt: Date;
+  pausedAt: Date | null;
+  pausedSeconds: number;
 }
 
-export function isExpired(startedAt: Date, durationMinutes: number): boolean {
-  return Date.now() > deadlineOf(startedAt, durationMinutes).getTime() + GRACE_SECONDS * 1000;
+/** Seconds left on the clock; negative once time has run out. */
+export function remainingSeconds(a: AttemptTiming, durationMinutes: number): number {
+  const now = Date.now();
+  const currentPauseMs = a.pausedAt
+    ? Math.min(now - a.pausedAt.getTime(), MAX_PAUSE_MS)
+    : 0;
+  const elapsedMs = now - a.startedAt.getTime() - a.pausedSeconds * 1000 - currentPauseMs;
+  return durationMinutes * 60 - elapsedMs / 1000;
+}
+
+export function isExpired(a: AttemptTiming, durationMinutes: number): boolean {
+  return remainingSeconds(a, durationMinutes) < -GRACE_SECONDS;
 }
 
 /**
@@ -65,10 +81,12 @@ export async function finalizeExpiredAttempts(): Promise<number> {
     select: {
       id: true,
       startedAt: true,
+      pausedAt: true,
+      pausedSeconds: true,
       test: { select: { durationMinutes: true } },
     },
   });
-  const expired = open.filter((a) => isExpired(a.startedAt, a.test.durationMinutes));
+  const expired = open.filter((a) => isExpired(a, a.test.durationMinutes));
   for (const a of expired) {
     await finalizeAttempt(a.id);
   }
@@ -118,11 +136,14 @@ export interface ReportQuestion {
   index: number;
   questionId: string;
   text: string;
+  imageUrl: string | null;
   options: string[];
+  optionImages: string[];
   correctIndex: number;
   selectedIndex: number | null;
   isCorrect: boolean;
   attempted: boolean;
+  doubtful: boolean;
   timeTakenSeconds: number;
   explanation: string | null;
 }
@@ -170,11 +191,14 @@ export async function buildReport(attemptId: string): Promise<Report | null> {
       index: i + 1,
       questionId: q.id,
       text: q.text,
+      imageUrl: q.imageUrl,
       options: q.options,
+      optionImages: q.optionImages,
       correctIndex: q.correctIndex,
       selectedIndex,
       isCorrect: answer?.isCorrect ?? false,
       attempted: selectedIndex !== null,
+      doubtful: answer?.doubtful ?? false,
       timeTakenSeconds: answer?.timeTakenSeconds ?? 0,
       explanation: q.explanation,
     };

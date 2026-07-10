@@ -7,7 +7,9 @@ import { formatClock } from "@/lib/utils";
 interface QuizQuestion {
   id: string;
   text: string;
+  imageUrl: string | null;
   options: string[];
+  optionImages: string[];
 }
 
 interface AttemptData {
@@ -22,10 +24,13 @@ interface AttemptData {
   };
   startedAt: string;
   serverNow: string;
+  paused: boolean;
+  remainingSeconds: number;
   questions: QuizQuestion[];
   savedAnswers: {
     questionId: string;
     selectedIndex: number | null;
+    doubtful: boolean;
     timeTakenSeconds: number;
   }[];
 }
@@ -40,12 +45,16 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const [doubtful, setDoubtful] = useState<Record<string, boolean>>({});
 
   // Accumulated seconds per question, plus when the current question was opened.
   const timeSpentRef = useRef<Record<string, number>>({});
   const enteredAtRef = useRef<number>(Date.now());
   const deadlineRef = useRef<number>(0);
   const submittingRef = useRef(false);
+  const doubtfulRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -64,21 +73,22 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
         }
         const d = body as AttemptData;
         const initial: Record<string, number | null> = {};
+        const initialDoubtful: Record<string, boolean> = {};
         for (const q of d.questions) initial[q.id] = null;
         for (const a of d.savedAnswers) {
           initial[a.questionId] = a.selectedIndex;
+          initialDoubtful[a.questionId] = a.doubtful;
           timeSpentRef.current[a.questionId] = a.timeTakenSeconds;
         }
-        // Compute the deadline using server time so a wrong device clock
-        // cannot extend the test.
-        const serverNow = new Date(d.serverNow).getTime();
-        const startedAt = new Date(d.startedAt).getTime();
-        const clockOffset = Date.now() - serverNow;
-        deadlineRef.current =
-          startedAt + d.test.durationMinutes * 60_000 + clockOffset;
+        // The server computes the remaining time (pause-aware), so a wrong
+        // device clock cannot extend the test.
+        deadlineRef.current = Date.now() + d.remainingSeconds * 1000;
+        doubtfulRef.current = initialDoubtful;
+        setDoubtful(initialDoubtful);
+        setPaused(d.paused);
         setAnswers(initial);
         setData(d);
-        setRemaining(Math.max(0, (deadlineRef.current - Date.now()) / 1000));
+        setRemaining(d.remainingSeconds);
         enteredAtRef.current = Date.now();
       } catch {
         if (!cancelled) setLoadError("Network error — refresh to try again");
@@ -104,6 +114,7 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
         body: JSON.stringify({
           questionId,
           selectedIndex,
+          doubtful: doubtfulRef.current[questionId] ?? false,
           timeTakenSeconds: Math.round(timeSpentRef.current[questionId] ?? 0),
         }),
       }).catch(() => {
@@ -112,6 +123,7 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
     },
     [attemptId]
   );
+
 
   const doSubmit = useCallback(async () => {
     if (submittingRef.current || !data) return;
@@ -143,9 +155,9 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
     router.replace(`/result/${attemptId}`);
   }, [attemptId, answers, current, data, flushTime, router]);
 
-  // Countdown tick + auto-submit at zero.
+  // Countdown tick + auto-submit at zero. Frozen while paused.
   useEffect(() => {
-    if (!data) return;
+    if (!data || paused) return;
     const interval = setInterval(() => {
       const left = Math.max(0, (deadlineRef.current - Date.now()) / 1000);
       setRemaining(left);
@@ -155,7 +167,7 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
       }
     }, 500);
     return () => clearInterval(interval);
-  }, [data, doSubmit]);
+  }, [data, paused, doSubmit]);
 
   if (loadError) {
     return (
@@ -194,6 +206,46 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
     setPaletteOpen(false);
   }
 
+  function toggleDoubtful() {
+    const next = !(doubtful[q.id] ?? false);
+    doubtfulRef.current[q.id] = next;
+    setDoubtful((prev) => ({ ...prev, [q.id]: next }));
+    flushTime(q.id);
+    saveAnswer(q.id, answers[q.id] ?? null);
+  }
+
+  async function togglePause() {
+    if (pauseBusy) return;
+    setPauseBusy(true);
+    if (!paused) {
+      // Bank the current question's time before the clock stops.
+      flushTime(q.id);
+      saveAnswer(q.id, answers[q.id] ?? null);
+    }
+    try {
+      const res = await fetch(`/api/attempts/${attemptId}/pause`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: paused ? "resume" : "pause" }),
+      });
+      const body = await res.json();
+      if (res.ok) {
+        deadlineRef.current = Date.now() + body.remainingSeconds * 1000;
+        setRemaining(body.remainingSeconds);
+        setPaused(body.paused);
+        // Pause time must not count toward the current question's time.
+        enteredAtRef.current = Date.now();
+      } else if (res.status === 409) {
+        // Time ran out while paused on the server.
+        doSubmit();
+      }
+    } catch {
+      /* leave state as-is; the user can retry */
+    } finally {
+      setPauseBusy(false);
+    }
+  }
+
   return (
     <div className="flex flex-1 flex-col">
       {/* Sticky header with timer */}
@@ -208,13 +260,27 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
               {data.test.marksWrong > 0 && `/−${data.test.marksWrong}`} marks
             </p>
           </div>
-          <div
-            className={`shrink-0 rounded-lg px-3 py-1.5 font-mono text-lg font-semibold tabular-nums ${
-              lowTime ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-800"
-            }`}
-            aria-label="Time remaining"
-          >
-            {formatClock(remaining)}
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={togglePause}
+              disabled={pauseBusy}
+              title={paused ? "Resume the test" : "Pause the timer"}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {paused ? "▶ Resume" : "⏸ Pause"}
+            </button>
+            <div
+              className={`rounded-lg px-3 py-1.5 font-mono text-lg font-semibold tabular-nums ${
+                paused
+                  ? "bg-amber-100 text-amber-700"
+                  : lowTime
+                    ? "bg-red-100 text-red-700"
+                    : "bg-slate-100 text-slate-800"
+              }`}
+              aria-label="Time remaining"
+            >
+              {formatClock(remaining)}
+            </div>
           </div>
         </div>
       </header>
@@ -239,18 +305,19 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
             {questions.map((question, i) => {
               const answered = answers[question.id] !== null;
               const isCurrent = i === current;
+              const flagged = doubtful[question.id] ?? false;
               return (
                 <button
                   key={question.id}
                   onClick={() => goTo(i)}
-                  aria-label={`Go to question ${i + 1}${answered ? " (answered)" : ""}`}
+                  aria-label={`Go to question ${i + 1}${answered ? " (answered)" : ""}${flagged ? " (doubtful)" : ""}`}
                   className={`h-9 w-9 rounded-lg text-sm font-semibold transition ${
                     isCurrent
                       ? "bg-indigo-600 text-white ring-2 ring-indigo-300"
                       : answered
                         ? "bg-indigo-100 text-indigo-800"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  }`}
+                  } ${flagged && !isCurrent ? "ring-2 ring-amber-400" : ""}`}
                 >
                   {i + 1}
                 </button>
@@ -264,9 +331,18 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
           <p className="whitespace-pre-wrap text-base font-medium leading-relaxed text-slate-900 sm:text-lg">
             {q.text}
           </p>
+          {q.imageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={q.imageUrl}
+              alt="Question illustration"
+              className="mt-4 max-h-80 max-w-full rounded-lg border border-slate-200 object-contain"
+            />
+          )}
           <div className="mt-5 flex flex-col gap-2.5">
             {q.options.map((opt, i) => {
               const selected = answers[q.id] === i;
+              const optImage = q.optionImages?.[i];
               return (
                 <button
                   key={i}
@@ -286,19 +362,42 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
                   >
                     {String.fromCharCode(65 + i)}
                   </span>
-                  <span className="text-slate-800">{opt}</span>
+                  <span className="flex-1 text-slate-800">
+                    {opt}
+                    {optImage && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={optImage}
+                        alt={`Option ${String.fromCharCode(65 + i)}`}
+                        className="mt-2 max-h-40 max-w-full rounded-md border border-slate-200 object-contain"
+                      />
+                    )}
+                  </span>
                 </button>
               );
             })}
           </div>
-          {answers[q.id] !== null && (
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            {answers[q.id] !== null && (
+              <button
+                onClick={() => selectOption(answers[q.id] as number)}
+                className="text-sm text-slate-500 underline underline-offset-2 hover:text-slate-700"
+              >
+                Clear selection
+              </button>
+            )}
             <button
-              onClick={() => selectOption(answers[q.id] as number)}
-              className="mt-4 text-sm text-slate-500 underline underline-offset-2 hover:text-slate-700"
+              onClick={toggleDoubtful}
+              title="Flag this question if you think it (or its answer) is wrong"
+              className={`text-sm font-medium underline-offset-2 ${
+                doubtful[q.id]
+                  ? "text-amber-600 hover:text-amber-700"
+                  : "text-slate-500 underline hover:text-slate-700"
+              }`}
             >
-              Clear selection
+              {doubtful[q.id] ? "⚑ Marked doubtful — unmark" : "⚑ Mark as doubtful"}
             </button>
-          )}
+          </div>
         </div>
 
         {/* Navigation */}
@@ -336,6 +435,27 @@ export default function QuizRunner({ attemptId }: { attemptId: string }) {
           </button>
         </div>
       </main>
+
+      {/* Paused overlay */}
+      {paused && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/70 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-xl">
+            <p className="text-4xl">⏸</p>
+            <h3 className="mt-3 text-lg font-semibold text-slate-900">Test paused</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              The timer is stopped with <strong>{formatClock(remaining)}</strong> left.
+              Questions are hidden while paused.
+            </p>
+            <button
+              onClick={togglePause}
+              disabled={pauseBusy}
+              className="mt-5 w-full rounded-lg bg-indigo-600 px-5 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {pauseBusy ? "Resuming…" : "▶ Resume test"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Submit confirmation */}
       {confirmSubmit && (

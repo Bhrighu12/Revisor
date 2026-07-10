@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { guardAdmin } from "@/lib/admin-guard";
+import { parseImage } from "@/lib/utils";
 
 type Params = { params: Promise<{ testId: string }> };
 
 interface IncomingQuestion {
   text?: unknown;
+  imageUrl?: unknown;
   options?: unknown;
+  optionImages?: unknown;
   correctIndex?: unknown;
   explanation?: unknown;
 }
@@ -29,7 +32,18 @@ function parseQuestion(q: IncomingQuestion) {
   }
   const explanation =
     typeof q.explanation === "string" && q.explanation.trim() ? q.explanation.trim() : null;
-  return { text, options, correctIndex, explanation };
+  const imageUrl = parseImage(q.imageUrl);
+  const rawOptionImages = Array.isArray(q.optionImages) ? q.optionImages : [];
+  const optionImages = options.map((_, i) => parseImage(rawOptionImages[i]) ?? "");
+  return {
+    text,
+    options,
+    correctIndex,
+    explanation,
+    imageUrl,
+    // Store the parallel array only when at least one option has an image.
+    optionImages: optionImages.some((s) => s) ? optionImages : [],
+  };
 }
 
 /**

@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 interface Question {
   id: string;
   text: string;
+  imageUrl: string | null;
   options: string[];
+  optionImages: string[];
   correctIndex: number;
   explanation: string | null;
 }
@@ -25,7 +27,9 @@ interface TestData {
 
 interface Draft {
   text: string;
+  imageUrl?: string;
   options: string[];
+  optionImages?: string[];
   correctIndex: number;
   explanation?: string;
 }
@@ -116,8 +120,18 @@ function parseJsonQuestions(raw: string): { drafts: Draft[]; error?: string } {
 
     const explanation =
       typeof q.explanation === "string" && q.explanation.trim() ? q.explanation.trim() : undefined;
+    const imageUrl =
+      typeof q.imageUrl === "string" && q.imageUrl.trim() ? q.imageUrl.trim() : undefined;
+    const rawOptImgs: unknown[] = Array.isArray(q.optionImages) ? q.optionImages : [];
+    const optionImages =
+      rawOptImgs.length > 0
+        ? options.map((_, i) => {
+            const v = rawOptImgs[i];
+            return typeof v === "string" ? v.trim() : "";
+          })
+        : undefined;
 
-    drafts.push({ text, options, correctIndex, explanation });
+    drafts.push({ text, options, correctIndex, explanation, imageUrl, optionImages });
   });
 
   if (problems.length > 0) {
@@ -128,10 +142,33 @@ function parseJsonQuestions(raw: string): { drafts: Draft[]; error?: string } {
 
 const emptyForm = {
   text: "",
+  imageUrl: "",
   options: ["", "", "", ""],
+  optionImages: ["", "", "", ""],
   correctIndex: 0,
   explanation: "",
 };
+
+/**
+ * Compresses an uploaded image to a JPEG data URI (max 900px on the long
+ * edge) so questions with images stay small enough to store in the database.
+ */
+async function fileToCompressedDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const maxDim = 900;
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas unavailable");
+  // White backdrop so transparent PNGs don't turn black as JPEG.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
 
 export default function TestEditor({ testId }: { testId: string }) {
   const router = useRouter();
@@ -253,7 +290,9 @@ export default function TestEditor({ testId }: { testId: string }) {
     setSavingQuestion(true);
     const payload = {
       text: form.text,
+      imageUrl: form.imageUrl || null,
       options: form.options,
+      optionImages: form.optionImages,
       correctIndex: form.correctIndex,
       explanation: form.explanation,
     };
@@ -283,14 +322,35 @@ export default function TestEditor({ testId }: { testId: string }) {
 
   function startEdit(q: Question) {
     setEditingId(q.id);
+    const optionCount = Math.max(4, q.options.length);
     setForm({
       text: q.text,
-      options: [...q.options, "", "", "", ""].slice(0, Math.max(4, q.options.length)),
+      imageUrl: q.imageUrl ?? "",
+      options: [...q.options, "", "", "", ""].slice(0, optionCount),
+      optionImages: [...(q.optionImages ?? []), "", "", "", ""].slice(0, optionCount),
       correctIndex: q.correctIndex,
       explanation: q.explanation ?? "",
     });
     setAddOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function attachImage(file: File | undefined, optionIndex: number | null) {
+    if (!file) return;
+    try {
+      const dataUrl = await fileToCompressedDataUrl(file);
+      if (optionIndex === null) {
+        setForm((f) => ({ ...f, imageUrl: dataUrl }));
+      } else {
+        setForm((f) => {
+          const optionImages = [...f.optionImages];
+          optionImages[optionIndex] = dataUrl;
+          return { ...f, optionImages };
+        });
+      }
+    } catch {
+      showNotice("Could not read that image file");
+    }
   }
 
   async function deleteQuestion(id: string) {
@@ -547,33 +607,104 @@ export default function TestEditor({ testId }: { testId: string }) {
             className={inputCls}
             required
           />
+          <div className="mt-3">
+            {form.imageUrl ? (
+              <div className="flex items-start gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={form.imageUrl}
+                  alt="Question"
+                  className="max-h-40 rounded-lg border border-slate-200 object-contain"
+                />
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, imageUrl: "" })}
+                  className="text-sm font-medium text-red-600 hover:underline"
+                >
+                  Remove image
+                </button>
+              </div>
+            ) : (
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-indigo-600 hover:underline">
+                🖼 Add question image
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    attachImage(e.target.files?.[0], null);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+          </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {form.options.map((opt, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="correct"
-                  checked={form.correctIndex === i}
-                  onChange={() => setForm({ ...form, correctIndex: i })}
-                  title="Mark as correct answer"
-                  className="h-4 w-4 accent-emerald-600"
-                />
-                <input
-                  value={opt}
-                  onChange={(e) => {
-                    const options = [...form.options];
-                    options[i] = e.target.value;
-                    setForm({ ...form, options });
-                  }}
-                  placeholder={`Option ${String.fromCharCode(65 + i)}`}
-                  className={inputCls}
-                  required
-                />
+              <div key={i}>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="correct"
+                    checked={form.correctIndex === i}
+                    onChange={() => setForm({ ...form, correctIndex: i })}
+                    title="Mark as correct answer"
+                    className="h-4 w-4 accent-emerald-600"
+                  />
+                  <input
+                    value={opt}
+                    onChange={(e) => {
+                      const options = [...form.options];
+                      options[i] = e.target.value;
+                      setForm({ ...form, options });
+                    }}
+                    placeholder={`Option ${String.fromCharCode(65 + i)}`}
+                    className={inputCls}
+                    required
+                  />
+                </div>
+                <div className="ml-6 mt-1.5">
+                  {form.optionImages[i] ? (
+                    <div className="flex items-center gap-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={form.optionImages[i]}
+                        alt={`Option ${String.fromCharCode(65 + i)}`}
+                        className="max-h-16 rounded border border-slate-200 object-contain"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const optionImages = [...form.optionImages];
+                          optionImages[i] = "";
+                          setForm({ ...form, optionImages });
+                        }}
+                        className="text-xs font-medium text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-indigo-600 hover:underline">
+                      🖼 Add image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          attachImage(e.target.files?.[0], i);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  )}
+                </div>
               </div>
             ))}
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Select the radio button next to the correct option.
+            Select the radio button next to the correct option. Images are optional — you can
+            attach one to the question and/or to any option.
           </p>
           <label className="mb-1 mt-4 block text-sm font-medium text-slate-700">
             Explanation (optional)
@@ -845,6 +976,14 @@ export default function TestEditor({ testId }: { testId: string }) {
                     Remove
                   </button>
                 </div>
+                {d.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={d.imageUrl}
+                    alt="Question"
+                    className="mt-2 max-h-32 rounded-lg border border-slate-200 object-contain"
+                  />
+                )}
                 <ul className="mt-2 space-y-1 text-sm">
                   {d.options.map((opt, j) => (
                     <li
@@ -857,6 +996,14 @@ export default function TestEditor({ testId }: { testId: string }) {
                     >
                       {String.fromCharCode(65 + j)}. {opt}
                       {j === d.correctIndex && " ✓"}
+                      {d.optionImages?.[j] && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={d.optionImages[j]}
+                          alt={`Option ${String.fromCharCode(65 + j)}`}
+                          className="mt-1 max-h-16 rounded border border-slate-200 object-contain"
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -905,6 +1052,14 @@ export default function TestEditor({ testId }: { testId: string }) {
                   </button>
                 </div>
               </div>
+              {q.imageUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={q.imageUrl}
+                  alt="Question"
+                  className="mt-2 max-h-32 rounded-lg border border-slate-200 object-contain"
+                />
+              )}
               <ul className="mt-2 space-y-1 text-sm">
                 {q.options.map((opt, j) => (
                   <li
@@ -915,6 +1070,14 @@ export default function TestEditor({ testId }: { testId: string }) {
                   >
                     {String.fromCharCode(65 + j)}. {opt}
                     {j === q.correctIndex && " ✓"}
+                    {q.optionImages?.[j] && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={q.optionImages[j]}
+                        alt={`Option ${String.fromCharCode(65 + j)}`}
+                        className="mt-1 max-h-16 rounded border border-slate-200 object-contain"
+                      />
+                    )}
                   </li>
                 ))}
               </ul>

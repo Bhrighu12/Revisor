@@ -31,6 +31,53 @@ function sanitize(text: string): string {
   );
 }
 
+/** pdfkit can embed PNG/JPEG buffers; other formats and remote URLs are skipped. */
+function imageBuffer(url: string | null | undefined): Buffer | null {
+  if (!url) return null;
+  const m = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(url);
+  if (!m) return null;
+  try {
+    return Buffer.from(m[2], "base64");
+  } catch {
+    return null;
+  }
+}
+
+/** Reads pixel dimensions from a PNG or JPEG buffer (pdfkit doesn't expose them). */
+function imageSize(buf: Buffer): { w: number; h: number } | null {
+  // PNG: IHDR width/height at fixed offsets.
+  if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) {
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  }
+  // JPEG: scan segments for a SOF marker.
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) return null;
+      const marker = buf[i + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { w: buf.readUInt16BE(i + 7), h: buf.readUInt16BE(i + 5) };
+      }
+      i += 2 + buf.readUInt16BE(i + 2);
+    }
+  }
+  return null;
+}
+
+function drawImage(doc: PDFKit.PDFDocument, buf: Buffer, x: number, maxW: number, maxH: number) {
+  try {
+    const size = imageSize(buf);
+    const scale = size ? Math.min(maxW / size.w, maxH / size.h, 1) : 1;
+    const drawnH = size ? size.h * scale : maxH;
+    if (doc.y + drawnH > doc.page.height - 60) doc.addPage();
+    doc.image(buf, x, doc.y, { fit: [maxW, maxH] });
+    doc.y += drawnH + 6;
+    doc.x = x;
+  } catch {
+    /* corrupt image data — leave it out of the PDF */
+  }
+}
+
 /** Renders a submitted attempt's report card as a PDF. */
 export function buildReportPdf(report: Report): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -107,12 +154,18 @@ export function buildReportPdf(report: Report): Promise<Buffer> {
       doc
         .font("Helvetica")
         .fillColor(MUTED)
-        .text(`   (${formatSeconds(q.timeTakenSeconds)})`);
+        .text(
+          `   (${formatSeconds(q.timeTakenSeconds)})` +
+            (q.doubtful ? "   — flagged doubtful by candidate" : "")
+        );
       doc.moveDown(0.2);
 
       doc.font("Helvetica-Bold").fontSize(10).fillColor(SLATE);
       doc.text(sanitize(q.text), { width });
       doc.moveDown(0.3);
+
+      const qImage = imageBuffer(q.imageUrl);
+      if (qImage) drawImage(doc, qImage, 48, 300, 180);
 
       q.options.forEach((opt, i) => {
         const isCorrect = i === q.correctIndex;
@@ -128,6 +181,8 @@ export function buildReportPdf(report: Report): Promise<Buffer> {
         doc.text(`${String.fromCharCode(65 + i)}. ${sanitize(opt)}${suffix}`, 60, doc.y, {
           width: width - 12,
         });
+        const optImage = imageBuffer(q.optionImages?.[i]);
+        if (optImage) drawImage(doc, optImage, 72, 180, 100);
       });
 
       if (q.explanation) {
