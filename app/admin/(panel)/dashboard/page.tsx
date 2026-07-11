@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { SUBJECTS, SUBJECT_LABELS } from "@/lib/utils";
 import type { Subject } from "@/app/generated/prisma/enums";
 import CreateTestForm from "@/components/admin/CreateTestForm";
+import CombineTestsForm from "@/components/admin/CombineTestsForm";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,10 @@ export default async function DashboardPage({
             Create tests for the four AFCAT sections and manage their questions.
           </p>
         </div>
-        <CreateTestForm />
+        <div className="flex flex-wrap gap-3">
+          <CreateTestForm />
+          <CombineTestsForm />
+        </div>
       </div>
 
       {/* Subject filter */}
