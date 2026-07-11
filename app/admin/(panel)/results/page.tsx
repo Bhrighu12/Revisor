@@ -32,8 +32,7 @@ export default async function ResultsPage({
           _count: { select: { questions: true } },
         },
       },
-      accessCode: { select: { code: true } },
-      answers: { select: { timeTakenSeconds: true } },
+      answers: { select: { timeTakenSeconds: true, selectedIndex: true, isCorrect: true } },
     },
   });
 
@@ -79,13 +78,15 @@ export default async function ResultsPage({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[820px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3 font-medium">Candidate</th>
                 <th className="px-4 py-3 font-medium">Test</th>
-                <th className="px-4 py-3 font-medium">Code</th>
                 <th className="px-4 py-3 font-medium">Score</th>
+                <th className="px-4 py-3 font-medium text-emerald-700">Correct</th>
+                <th className="px-4 py-3 font-medium text-red-700">Wrong</th>
+                <th className="px-4 py-3 font-medium">Unattempted</th>
                 <th className="px-4 py-3 font-medium">Time</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Started</th>
@@ -95,6 +96,11 @@ export default async function ResultsPage({
             <tbody>
               {attempts.map((a) => {
                 const totalTime = a.answers.reduce((s, x) => s + x.timeTakenSeconds, 0);
+                const correct = a.answers.filter((x) => x.isCorrect).length;
+                const wrong = a.answers.filter(
+                  (x) => x.selectedIndex !== null && !x.isCorrect
+                ).length;
+                const unattempted = Math.max(0, a.test._count.questions - correct - wrong);
                 return (
                   <tr key={a.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-3 font-medium text-slate-900">{a.candidateName}</td>
@@ -104,13 +110,19 @@ export default async function ResultsPage({
                         {SUBJECT_LABELS[a.test.subject]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                      {a.accessCode.code}
-                    </td>
                     <td className="px-4 py-3 tabular-nums text-slate-900">
                       {a.status === "SUBMITTED"
                         ? `${a.score ?? 0} / ${a.test._count.questions * a.test.marksCorrect}`
                         : "—"}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums font-medium text-emerald-700">
+                      {a.status === "SUBMITTED" ? correct : "—"}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums font-medium text-red-700">
+                      {a.status === "SUBMITTED" ? wrong : "—"}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums text-slate-600">
+                      {a.status === "SUBMITTED" ? unattempted : "—"}
                     </td>
                     <td className="px-4 py-3 tabular-nums text-slate-700">
                       {a.status === "SUBMITTED" ? formatSeconds(totalTime) : "—"}
