@@ -463,7 +463,11 @@ export default function TestEditor({ testId }: { testId: string }) {
     if (res.ok) {
       const data = await res.json();
       setDrafts([]);
-      showNotice(`Added ${data.count} questions`);
+      showNotice(
+        data.skipped > 0
+          ? `Added ${data.count} questions · skipped ${data.skipped} duplicate${data.skipped > 1 ? "s" : ""}`
+          : `Added ${data.count} questions`
+      );
       load();
     } else {
       const data = await res.json();
